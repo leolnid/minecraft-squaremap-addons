@@ -4,12 +4,18 @@ import com.sk89q.worldedit.math.BlockVector3;
 import com.sk89q.worldguard.WorldGuard;
 import com.sk89q.worldguard.protection.flags.Flag;
 import com.sk89q.worldguard.protection.flags.StateFlag;
+import com.sk89q.worldguard.protection.flags.StringFlag;
 import com.sk89q.worldguard.protection.regions.ProtectedRegion;
 import com.sk89q.worldguard.protection.regions.RegionType;
 import com.sk89q.worldguard.util.profile.cache.ProfileCache;
+
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+
 import org.bukkit.scheduler.BukkitRunnable;
 import xyz.jpenilla.squaremap.addon.worldguard.SquaremapWorldGuard;
 import xyz.jpenilla.squaremap.addon.worldguard.hook.WGHook;
@@ -63,13 +69,13 @@ public final class SquaremapTask extends BukkitRunnable {
             BlockVector3 min = region.getMinimumPoint();
             BlockVector3 max = region.getMaximumPoint();
             marker = Marker.rectangle(
-                Point.of(min.getX(), min.getZ()),
-                Point.of(max.getX() + 1, max.getZ() + 1)
+                    Point.of(min.getX(), min.getZ()),
+                    Point.of(max.getX() + 1, max.getZ() + 1)
             );
         } else if (region.getType() == RegionType.POLYGON) {
             List<Point> points = region.getPoints().stream()
-                .map(point -> Point.of(point.getX(), point.getZ()))
-                .collect(Collectors.toList());
+                    .map(point -> Point.of(point.getX(), point.getZ()))
+                    .collect(Collectors.toList());
             marker = Marker.polygon(points);
         } else {
             // do not draw global region
@@ -78,32 +84,40 @@ public final class SquaremapTask extends BukkitRunnable {
 
         ProfileCache pc = WorldGuard.getInstance().getProfileCache();
         Map<Flag<?>, Object> flags = region.getFlags();
+        Object name = region.getFlag(this.plugin.nameFlag());
 
-        MarkerOptions.Builder options = MarkerOptions.builder()
-            .strokeColor(this.plugin.config().strokeColor)
-            .strokeWeight(this.plugin.config().strokeWeight)
-            .strokeOpacity(this.plugin.config().strokeOpacity)
-            .fillColor(this.plugin.config().fillColor)
-            .fillOpacity(this.plugin.config().fillOpacity)
-            .clickTooltip(
-                this.plugin.config().claimTooltip
-                    .replace("{world}", BukkitAdapter.bukkitWorld(this.world).getName()) // use names for now
-                    .replace("{id}", region.getId())
-                    .replace("{owner}", region.getOwners().toPlayersString())
-                    .replace("{regionname}", region.getId())
-                    .replace("{playerowners}", region.getOwners().toPlayersString(pc))
-                    .replace("{groupowners}", region.getOwners().toGroupsString())
-                    .replace("{playermembers}", region.getMembers().toPlayersString(pc))
-                    .replace("{groupmembers}", region.getMembers().toGroupsString())
-                    .replace("{parent}", region.getParent() == null ? "" : region.getParent().getId())
-                    .replace("{priority}", String.valueOf(region.getPriority()))
-                    .replace(
-                        "{flags}",
-                        flags.keySet().stream()
-                            .map(flag -> flag.getName() + ": " + flags.get(flag) + "<br/>")
-                            .collect(Collectors.joining())
-                    )
-            );
+        MarkerOptions.Builder options = MarkerOptions
+                .builder()
+                .strokeColor(this.plugin.config().strokeColor)
+                .strokeWeight(this.plugin.config().strokeWeight)
+                .strokeOpacity(this.plugin.config().strokeOpacity)
+                .fillColor(this.plugin.config().fillColor)
+                .fillOpacity(this.plugin.config().fillOpacity)
+                .clickTooltip(Pattern
+                        .compile("\\{flag_([a-zA-Z_-]+)}")
+                        .matcher(this.plugin.config().claimTooltip
+                                .replace("{world}", BukkitAdapter.bukkitWorld(this.world).getName()) // use names for now
+                                .replace("{id}", region.getId())
+                                .replace("{owner}", region.getOwners().toPlayersString())
+                                .replace("{regionname}", Objects.isNull(name)? region.getId(): name.toString().replaceAll("§[0-9a-fklmnor]", ""))
+                                .replace("{playerowners}", region.getOwners().toPlayersString(pc))
+                                .replace("{groupowners}", region.getOwners().toGroupsString())
+                                .replace("{playermembers}", region.getMembers().toPlayersString(pc))
+                                .replace("{groupmembers}", region.getMembers().toGroupsString())
+                                .replace("{parent}", region.getParent() == null ? "" : region.getParent().getId())
+                                .replace("{priority}", String.valueOf(region.getPriority()))
+                                .replace("{flags}", flags.keySet().stream()
+                                        .map(flag -> flag.getName() + ": " + flags.get(flag).toString().replaceAll("§[0-9a-fklmnor]", "") + "<br/>")
+                                        .collect(Collectors.joining()))
+                        ).replaceAll(match -> {
+                            Optional<Flag<?>> flag = flags
+                                    .keySet()
+                                    .stream()
+                                    .filter(f -> Objects.equals(f.getName(), match.group(1)))
+                                    .findFirst();
+
+                            return flag.map(value -> flags.getOrDefault(value, "").toString().replaceAll("§[0-9a-fklmnor]", "")).orElse("");
+                        }));
 
 
         marker.markerOptions(options);
